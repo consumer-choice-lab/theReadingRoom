@@ -31,6 +31,27 @@ window.STORE_CONFIG = {
     "and add the ones you want to your basket. Please spend the full amount. " +
     "When you are happy with your basket, press <strong>Checkout</strong>.",
 
+  /* ---------------- PHASE 2 (reader.html) ----------------
+     The condition comes from Qualtrics in the reader's address: &cond=1 (BNPL) or &cond=0 (LumpSum).
+     days = when each payment falls due, in days from today (0 = today).
+     The amount is split equally across the payments; returned books are removed from it. */
+  // Date the Phase 1 order was placed (YYYY-MM-DD). All payment dates count from here.
+  // Can be set per participant by adding &pdate=2026-11-09 to the reader's address.
+  purchaseDate: "2026-11-09",
+
+  // days  = when each payment falls due, in days after the purchase date (0 = purchase day)
+  // paid  = how many of those payments have already been made
+  paymentPlans: {
+    BNPL: { name: "Pay in 4", days: [0, 7, 14, 21], paid: 1 },
+    LumpSum: { name: "Pay Later", days: [28], paid: 0 }
+  },
+
+  // Text shown at the top of the reader
+  readerIntro:
+    "Here are the opening pages of the books you chose. Look through each one and decide whether to " +
+    "<strong>keep</strong> it or <strong>return</strong> it. You will not pay for any book you return. " +
+    "When you have decided for every book, press <strong>Confirm my order</strong>.",
+
   // Only redirect back to these hosts when ?ret= is used (prevents open redirects).
   allowedReturnHosts: ["qualtrics.com"],
 

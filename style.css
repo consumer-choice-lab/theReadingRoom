@@ -109,3 +109,39 @@ pre.debug{text-align:left;background:var(--chip);padding:12px;border-radius:8px;
 .cover.has-img::before,.cover.has-img::after,.cover.has-img .ct,.cover.has-img .ca{display:none}
 .cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .line .cover.has-img{padding:0}
+
+/* ---------- Phase 2: payment plan + keep/return ---------- */
+.plan{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:0 0 18px}
+.plan-order{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px;color:var(--muted)}
+.plan-order strong{color:var(--ink);font-size:1.1rem;font-variant-numeric:tabular-nums}
+.plan-name{display:inline-block;background:var(--ink);color:#fff;border-radius:999px;padding:2px 12px;font-size:.8rem;font-weight:600;letter-spacing:.02em}
+.plan-head{font-family:var(--serif);font-size:1.35rem;font-weight:700;margin:8px 0 14px}
+.timeline{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:relative}
+.timeline.single{grid-template-columns:repeat(2,minmax(0,1fr));max-width:440px}
+.timeline::before{content:"";position:absolute;left:9px;right:12%;top:9px;height:2px;background:var(--line)}
+.pay{position:relative;display:flex;flex-direction:column;gap:2px;padding-right:8px}
+.pay .dot{width:20px;height:20px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);margin-bottom:6px;position:relative;z-index:1}
+.pay.now .dot{background:var(--accent)}
+.pay.zero .dot{border-color:var(--line);background:var(--surface)}
+.pay .amt{font-weight:700;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.pay .rel{font-size:.88rem}
+.pay .date{font-size:.8rem;color:var(--muted)}
+.plan-detail{color:var(--muted);font-size:.92rem;margin:12px 0 0}
+.plan-ret{margin:8px 0 0;font-size:.92rem;color:var(--warn)}
+.tab{position:relative;padding-right:12px}
+.badge{display:inline-block;margin-top:4px;font-size:.72rem;font-weight:700;border-radius:999px;padding:1px 8px}
+.badge.keep{background:#e3efe9;color:var(--accent)}
+.badge.ret{background:#f6e3df;color:var(--warn)}
+.badge.todo{background:var(--chip);color:var(--muted)}
+.decide{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:0 0 12px}
+.decide .q{margin-right:auto}
+.choice{border:2px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 18px;font-weight:600;color:var(--ink)}
+.choice.keep[aria-pressed="true"]{border-color:var(--accent);background:var(--accent);color:#fff}
+.choice.ret[aria-pressed="true"]{border-color:var(--warn);background:var(--warn);color:#fff}
+@media (max-width:560px){
+  .timeline{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:14px}
+  .timeline::before{display:none}
+  .decide .q{width:100%}
+}
+.pay.now .dot{color:#fff;font-size:.7rem;display:flex;align-items:center;justify-content:center;font-weight:700}
+.gload{padding:24px;color:var(--muted);font-family:var(--sans)}
