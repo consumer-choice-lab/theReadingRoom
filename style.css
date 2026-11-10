@@ -145,3 +145,4 @@ pre.debug{text-align:left;background:var(--chip);padding:12px;border-radius:8px;
 }
 .pay.now .dot{color:#fff;font-size:.7rem;display:flex;align-items:center;justify-content:center;font-weight:700}
 .gload{padding:24px;color:var(--muted);font-family:var(--sans)}
+.tab small.inst{color:var(--accent);font-weight:600}

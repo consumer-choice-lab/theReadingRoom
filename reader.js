@@ -99,45 +99,42 @@ window.startApp = function () {
   }
 
   /* ---------- payment plan card ---------- */
+  // Label shown under each payment (from config.js), e.g. "Paid", "Due in 2 weeks".
+  function label(i, s) {
+    var l = PLAN.labels && PLAN.labels[i];
+    if (l) return l;
+    if (s.paid) return "Paid";
+    return s.day % 7 === 0 ? "Due in " + (s.day / 7) + " week" + (s.day === 7 ? "" : "s") : "Due in " + s.day + " days";
+  }
   function renderPlan() {
-    var order = orderTotal(), kept = keptTotal(), returned = order - kept;
-    var nRet = IDS.filter(function (id) { return state.dec[id] === "R"; }).length;
+    var order = orderTotal(), kept = keptTotal();
     var head = '<div class="plan-order"><span>Your order of ' + IDS.length + " book" + (IDS.length === 1 ? "" : "s") +
-      ", placed " + dateOf(0) + "</span><strong>" + gbp(order) + "</strong></div>";
+      "</span><strong>" + gbp(order) + "</strong></div>";
     if (!PLAN) {
       planEl.innerHTML = head + '<p class="note warn">Test mode: no payment condition was supplied (add &amp;cond=1 for Pay in 4 or &amp;cond=0 for Pay Later).</p>';
       return;
     }
-    var P = plan(kept), orig = split(order, PLAN.days.length), headline, detail, change = "";
-    var steps = P.pays.map(function (s) {
+    var P = plan(kept), orig = split(order, PLAN.days.length), headline, detail;
+    var steps = P.pays.map(function (s, i) {
       return '<li class="pay' + (s.paid ? " now" : "") + '"><span class="dot" aria-hidden="true">' + (s.paid ? "✓" : "") + "</span>" +
-        '<span class="amt">' + gbp(s.pence) + '</span><span class="rel">' + (s.paid ? "Paid" : "Due") + "</span>" +
-        '<span class="date">' + dateOf(s.day) + "</span></li>";
+        '<span class="amt">' + gbp(s.pence) + '</span><span class="rel">' + esc(label(i, s)) + "</span></li>";
     }).join("");
     if (PLAN.days[0] !== 0) {
       steps = '<li class="pay zero"><span class="dot" aria-hidden="true"></span><span class="amt">' + gbp(0) +
-        '</span><span class="rel">Order placed</span><span class="date">' + dateOf(0) + "</span></li>" + steps;
+        '</span><span class="rel">Order placed</span></li>' + steps;
     }
     if (COND === "BNPL") {
       headline = "You chose " + PLAN.name + ": " + PLAN.days.length + " interest-free payments of " + gbp(orig[0]);
-      detail = "You paid " + gbp(P.paid) + " on " + dateOf(PLAN.days[0]) + ". " +
-        (P.left ? "The remaining " + P.left + " payment" + (P.left === 1 ? " is" : "s are") + " due weekly." : "");
-      if (nRet) change = P.refund ? "You will be refunded <strong>" + gbp(P.refund) + "</strong> and have nothing more to pay." :
-        P.future === 0 ? "You have nothing more to pay." :
-        "Your remaining payments are now <strong>" + P.left + " × " + gbp(P.pays[P.pays.length - 1].pence) + "</strong>.";
+      detail = "You have paid the first payment of " + gbp(P.paid) + ".";
     } else {
-      var due = dateOf(PLAN.days[PLAN.days.length - 1]);
       headline = "You agreed to pay " + gbp(order) + " in 4 weeks";
-      detail = "On " + dateOf(0) + " you agreed to pay the full amount on " + due + ". Nothing has been paid yet.";
-      if (nRet) change = kept ? "You will now pay <strong>" + gbp(kept) + "</strong> on " + due + "." : "You have nothing to pay.";
+      detail = "You agreed to pay the full amount in 4 weeks. Nothing has been paid yet.";
     }
     planEl.innerHTML = head +
       '<div class="plan-name">' + esc(PLAN.name) + "</div>" +
       '<div class="plan-head">' + esc(headline) + "</div>" +
       '<ol class="timeline' + (P.pays.length === 1 ? " single" : "") + '">' + steps + "</ol>" +
-      '<p class="plan-detail">' + esc(detail) + "</p>" +
-      (nRet ? '<p class="plan-ret">Returning ' + nRet + " book" + (nRet === 1 ? "" : "s") + " (" + gbp(returned) + "). You will not pay for " +
-        (nRet === 1 ? "it" : "them") + ". " + change + "</p>" : "");
+      '<p class="plan-detail">' + esc(detail) + "</p>";
   }
 
   /* ---------- tabs and keep/return ---------- */
@@ -149,7 +146,9 @@ window.startApp = function () {
     tabs.innerHTML = IDS.map(function (id) {
       var b = BY_ID[id];
       return '<button class="tab" role="tab" type="button" data-id="' + id + '" aria-selected="' + (id === current) + '">' +
-        esc(b.title) + "<small>" + esc(b.author) + " · " + gbp(b.price) + "</small>" + badge(id) + "</button>";
+        esc(b.title) + "<small>" + esc(b.author) + " · " + gbp(b.price) + "</small>" +
+        (COND === "BNPL" ? '<small class="inst">' + PLAN.days.length + " payments of " + gbp(split(b.price, PLAN.days.length)[0]) + "</small>" : "") +
+        badge(id) + "</button>";
     }).join("");
     tabs.querySelectorAll(".tab").forEach(function (el) { el.onclick = function () { show(el.getAttribute("data-id")); }; });
   }
@@ -257,7 +256,7 @@ window.startApp = function () {
     var kept = keptTotal(), P = plan(kept);
     var list = function (ids) { return ids.length ? "<ul>" + ids.map(function (id) { return "<li>" + esc(BY_ID[id].title) + " (" + gbp(BY_ID[id].price) + ")</li>"; }).join("") + "</ul>" : "<p>None</p>"; };
     var pay = !PLAN ? "<p>(No payment condition in test mode.)</p>" :
-      "<p><strong>" + esc(PLAN.name) + ":</strong> " + P.pays.map(function (s) { return gbp(s.pence) + (s.paid ? " paid " : " due ") + dateOf(s.day); }).join(", ") + "." +
+      "<p><strong>" + esc(PLAN.name) + ":</strong> " + P.pays.map(function (s, i) { return gbp(s.pence) + " " + label(i, s).toLowerCase(); }).join(", ") + "." +
       (P.refund ? " You will be refunded " + gbp(P.refund) + "." : "") + "</p>";
     var bg = document.createElement("div"); bg.className = "modal-bg";
     bg.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Confirm your order</h2>' +
