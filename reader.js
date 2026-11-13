@@ -91,6 +91,11 @@ window.startApp = function () {
   function plan(kept) {
     if (!PLAN) return { pays: [], paid: 0, refund: 0, future: 0 };
     var n = PLAN.days.length, k = Math.min(PLAN.paid || 0, n);
+    // Lump sum shown on the same timeline: £0 at every step, everything on the last payment.
+    if (PLAN.allAtEnd) {
+      var ls = PLAN.days.map(function (d, i) { return { day: d, pence: i === n - 1 ? kept : 0, paid: i < k }; });
+      return { pays: ls, paid: 0, refund: 0, future: kept, left: n - k };
+    }
     var orig = split(orderTotal(), n), paid = 0, pays = [];
     for (var i = 0; i < k; i++) { paid += orig[i]; pays.push({ day: PLAN.days[i], pence: orig[i], paid: true }); }
     var owed = kept - paid, refund = owed < 0 ? -owed : 0, rest = split(Math.max(owed, 0), n - k || 1);

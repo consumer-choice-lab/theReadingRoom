@@ -42,10 +42,12 @@ window.STORE_CONFIG = {
   // days  = when each payment falls due, in days after the purchase date (0 = purchase day)
   // paid  = how many of those payments have already been made
   // labels = text shown under each payment (no calendar dates are shown)
+  // allAtEnd = show £0 at every step and the whole amount on the last one (lump sum)
   paymentPlans: {
     BNPL: { name: "Pay in 4", days: [0, 14, 21, 28], paid: 1,
             labels: ["Paid", "Due in 2 weeks", "Due in 3 weeks", "Due in 4 weeks"] },
-    LumpSum: { name: "Pay Later", days: [28], paid: 0, labels: ["Due in 4 weeks"] }
+    LumpSum: { name: "Pay Later", days: [0, 14, 21, 28], paid: 1, allAtEnd: true,
+               labels: ["Paid", "Due in 2 weeks", "Due in 3 weeks", "Due in 4 weeks"] }
   },
 
   // Text shown at the top of the reader
