@@ -124,7 +124,7 @@ window.startApp = function () {
         '</span><span class="rel">Order placed</span></li>' + steps;
     }
     if (COND === "BNPL") {
-      headline = "You chose " + PLAN.name + ": " + PLAN.days.length + " interest-free payments of " + gbp(orig[0]);
+      headline = "You agreed to " + PLAN.name + ": " + PLAN.days.length + " interest-free payments of " + gbp(orig[0]);
       detail = "You have paid the first payment of " + gbp(P.paid) + ".";
     } else {
       headline = "You agreed to pay " + gbp(order) + " in 4 weeks";
@@ -154,7 +154,7 @@ window.startApp = function () {
   }
   function renderDecide() {
     var b = BY_ID[current], d = state.dec[current];
-    decideEl.innerHTML = '<span class="q">Keep or return <strong>' + esc(b.title) + "</strong> (" + gbp(b.price) + ")?</span>" +
+    decideEl.innerHTML = '<span class="q">Keep or return <strong>' + esc(b.title) + "</strong>?</span>" +
       '<button type="button" class="choice keep" data-v="K" aria-pressed="' + (d === "K") + '">Keep</button>' +
       '<button type="button" class="choice ret" data-v="R" aria-pressed="' + (d === "R") + '">Return</button>';
     decideEl.querySelectorAll(".choice").forEach(function (el) {
