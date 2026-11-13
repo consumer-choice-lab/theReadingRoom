@@ -111,15 +111,7 @@ window.startApp = function () {
     if (s.paid) return "Paid";
     return s.day % 7 === 0 ? "Due in " + (s.day / 7) + " week" + (s.day === 7 ? "" : "s") : "Due in " + s.day + " days";
   }
-  function renderPlan() {
-    var order = orderTotal(), kept = keptTotal();
-    var head = '<div class="plan-order"><span>Your order of ' + IDS.length + " book" + (IDS.length === 1 ? "" : "s") +
-      "</span><strong>" + gbp(order) + "</strong></div>";
-    if (!PLAN) {
-      planEl.innerHTML = head + '<p class="note warn">Test mode: no payment condition was supplied (add &amp;cond=1 for Pay in 4 or &amp;cond=0 for Pay Later).</p>';
-      return;
-    }
-    var P = plan(kept), orig = split(order, PLAN.days.length), headline, detail;
+  function timelineSteps(P) {
     var steps = P.pays.map(function (s, i) {
       return '<li class="pay' + (s.paid ? " now" : "") + '"><span class="dot" aria-hidden="true">' + (s.paid ? "✓" : "") + "</span>" +
         '<span class="amt">' + gbp(s.pence) + '</span><span class="rel">' + esc(label(i, s)) + "</span></li>";
@@ -128,6 +120,19 @@ window.startApp = function () {
       steps = '<li class="pay zero"><span class="dot" aria-hidden="true"></span><span class="amt">' + gbp(0) +
         '</span><span class="rel">Order placed</span></li>' + steps;
     }
+    return steps;
+  }
+  function renderPlan() {
+    var order = orderTotal();
+    var head = '<div class="plan-order"><span>Your order of ' + IDS.length + " book" + (IDS.length === 1 ? "" : "s") +
+      "</span><strong>" + gbp(order) + "</strong></div>";
+    if (!PLAN) {
+      planEl.innerHTML = head + '<p class="note warn">Test mode: no payment condition was supplied (add &amp;cond=1 for Pay in 4 or &amp;cond=0 for Pay Later).</p>';
+      return;
+    }
+    // The panel always shows the original order; Keep/Return choices do not change it.
+    var P = plan(order), orig = split(order, PLAN.days.length), headline, detail;
+    var steps = timelineSteps(P);
     if (COND === "BNPL") {
       headline = "You agreed to " + PLAN.name + ": " + PLAN.days.length + " interest-free payments of " + gbp(orig[0]);
       detail = "You have paid the first payment of " + gbp(P.paid) + ".";
@@ -260,9 +265,7 @@ window.startApp = function () {
     var rets = IDS.filter(function (id) { return state.dec[id] === "R"; });
     var kept = keptTotal(), P = plan(kept);
     var list = function (ids) { return ids.length ? "<ul>" + ids.map(function (id) { return "<li>" + esc(BY_ID[id].title) + " (" + gbp(BY_ID[id].price) + ")</li>"; }).join("") + "</ul>" : "<p>None</p>"; };
-    var pay = !PLAN ? "<p>(No payment condition in test mode.)</p>" :
-      "<p><strong>" + esc(PLAN.name) + ":</strong> " + P.pays.map(function (s, i) { return gbp(s.pence) + " " + label(i, s).toLowerCase(); }).join(", ") + "." +
-      (P.refund ? " You will be refunded " + gbp(P.refund) + "." : "") + "</p>";
+    var pay = "";
     var bg = document.createElement("div"); bg.className = "modal-bg";
     bg.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Confirm your order</h2>' +
       "<p><strong>Keeping</strong></p>" + list(keeps) + "<p><strong>Returning</strong></p>" + list(rets) + pay +
@@ -277,22 +280,45 @@ window.startApp = function () {
     state.payload = buildPayload(); state.done = true; save();
     send();
   }
+  function summaryHtml() {
+    var keeps = IDS.filter(function (id) { return state.dec[id] === "K"; });
+    var rets = IDS.filter(function (id) { return state.dec[id] === "R"; });
+    var kept = keptTotal(), order = orderTotal();
+    var list = function (ids) {
+      return ids.length ? '<ul class="sum-list">' + ids.map(function (id) {
+        return "<li><span>" + esc(BY_ID[id].title) + '</span><span class="sum-price">' + gbp(BY_ID[id].price) + "</span></li>";
+      }).join("") + "</ul>" : '<p class="sum-none">None</p>';
+    };
+    var html = '<section class="summary">' +
+      '<div class="sum-cols"><div><h2>Keeping (' + keeps.length + ")</h2>" + list(keeps) + "</div>" +
+      "<div><h2>Returning (" + rets.length + ")</h2>" + list(rets) + "</div></div>" +
+      '<div class="sum-total"><span>Order total</span><strong>' + gbp(order) + "</strong></div>" +
+      '<div class="sum-total"><span>Returned amount</span><strong>' + gbp(order - kept) + "</strong></div>" +
+      '<p class="sum-prize">You will stand a chance of winning ' +
+        (keeps.length ? "the books you kept" : "") + (keeps.length && order - kept ? " and " : "") +
+        (order - kept ? "the returned amount (" + gbp(order - kept) + ")" : "") + ".</p>";
+    return html + "</section>";
+  }
+
   function send() {
     var p = state.payload;
-    $("doneBtn").disabled = true;
-    tabs.innerHTML = ""; decideEl.innerHTML = ""; planEl.innerHTML = "";
+    var btn = $("doneBtn"); if (btn) btn.hidden = true;
+    var intro = $("intro"); if (intro) intro.hidden = true;
+    tabs.hidden = true; decideEl.hidden = true; planEl.hidden = true; note.textContent = "";
+    var summary = summaryHtml();
     if (IN_FRAME) {
       window.parent.postMessage({ type: "readingroom-reader-complete", payload: p }, CFG.parentOrigin);
-      pane.innerHTML = '<div class="done"><h1>Order confirmed</h1><p>Press the arrow button below to continue the survey.</p></div>';
+      pane.innerHTML = '<div class="done"><h1>Order confirmed</h1><p>Here is a summary of your order. Press the arrow button below to continue the survey.</p></div>' + summary;
     } else if (RET) {
       Object.keys(p).forEach(function (k) { RET.searchParams.set(k, p[k]); });
       location.replace(RET.toString());
     } else {
-      pane.innerHTML = '<div class="done"><h1>Test mode</h1><pre class="debug">' + esc(JSON.stringify(p, null, 2)) + "</pre></div>";
+      pane.innerHTML = '<div class="done"><h1>Order confirmed</h1><p>Test mode: outside Qualtrics. The data that would be sent is shown below the summary.</p></div>' +
+        summary + '<pre class="debug">' + esc(JSON.stringify(p, null, 2)) + "</pre>";
     }
   }
 
-  if (state.done) { $("intro").remove(); send(); return; }
+  if (state.done) { send(); return; }
   renderPlan();
   show(IDS[0]);
 };
