@@ -60,5 +60,5 @@ window.STORE_CONFIG = {
   allowedReturnHosts: ["qualtrics.com"],
 
   // Only accept the Qualtrics page as iframe parent from these origins ("*" while piloting).
-  parentOrigin: "https://leeds.eu.qualtrics.com"
+  parentOrigin: "*"
 };
