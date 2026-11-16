@@ -262,6 +262,7 @@ window.startApp = function () {
       RET ? "Taking you back to the survey…" : "Test mode: no survey to return to. This is what would be sent:";
     app.innerHTML = '<div class="done"><h1>Order confirmed</h1><p>' + msg + "</p>" +
       (!IN_FRAME && !RET ? '<pre class="debug">' + esc(JSON.stringify(p, null, 2)) + "</pre>" : "") + "</div>";
+    window.scrollTo(0, 0);
     document.getElementById("basketBtn").disabled = true;
     header();
   }

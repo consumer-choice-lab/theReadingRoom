@@ -306,6 +306,7 @@ window.startApp = function () {
     var intro = $("intro"); if (intro) intro.hidden = true;
     tabs.hidden = true; decideEl.hidden = true; planEl.hidden = true; note.textContent = "";
     var summary = summaryHtml();
+    window.scrollTo(0, 0);
     if (IN_FRAME) {
       window.parent.postMessage({ type: "readingroom-reader-complete", payload: p }, CFG.parentOrigin);
       pane.innerHTML = '<div class="done"><h1>Order confirmed</h1><p>Here is a summary of your order. Press the arrow button below to continue the survey.</p></div>' + summary;
