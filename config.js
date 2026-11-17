@@ -61,7 +61,7 @@ window.STORE_CONFIG = {
     "<ol class=\"steps\">" +
     "<li><strong>Click the book</strong> in the row below (books still to do are marked <span class=\"badge todo\">Decide</span>).</li>" +
     "<li><strong>Preview</strong> its opening pages.</li>" +
-    "<li>Click the green <strong>Keep</strong> or the red <strong>Return</strong> button. You will not pay for any book you return.</li>" +
+    "<li>Click the green <strong>Keep</strong> or the red <strong>Return</strong> button.</li>" +
     "</ol>" +
     "<p class=\"steps-f\">When every book shows Keep or Return, press <strong>Confirm my order</strong>.</p>",
 

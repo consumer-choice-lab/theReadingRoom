@@ -190,10 +190,10 @@ window.startApp = function () {
     decideEl.className = "decide" + (d ? " decided" : " pending");
     decideEl.innerHTML =
       '<div class="d-head"><span class="d-count">Book ' + pos + " of " + IDS.length + " · " + n + " decided</span>" +
-      '<span class="q">Do you want to keep or return <strong>' + esc(b.title) + "</strong> (" + usd(b.price) + ")?</span></div>" +
+      '<span class="q">Do you want to keep or return <strong>' + esc(b.title) + "</strong>?</span></div>" +
       '<div class="d-btns">' +
-      '<button type="button" class="choice keep" data-v="K" aria-pressed="' + (d === "K") + '"><span class="ic" aria-hidden="true">✓</span><span>Keep<small>I want this book</small></span></button>' +
-      '<button type="button" class="choice ret" data-v="R" aria-pressed="' + (d === "R") + '"><span class="ic" aria-hidden="true">↩</span><span>Return<small>I will not pay for it</small></span></button>' +
+      '<button type="button" class="choice keep" data-v="K" aria-pressed="' + (d === "K") + '"><span class="ic" aria-hidden="true">✓</span><span>Keep</span></button>' +
+      '<button type="button" class="choice ret" data-v="R" aria-pressed="' + (d === "R") + '"><span class="ic" aria-hidden="true">↩</span><span>Return</span></button>' +
       "</div>" + status;
     decideEl.querySelectorAll(".choice").forEach(function (el) {
       el.onclick = function () {
