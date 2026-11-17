@@ -1,6 +1,7 @@
 /* Phase 2: order review with payment condition, book samples, and keep/return decisions.
    URL parameters:
      pid      participant ID
+     rid      Qualtrics ResponseID (optional; a new response starts fresh)
      books    comma-separated book IDs from Phase 1 (bs_items), e.g. b03,b07
      cond     payment condition from the Qualtrics Randomizer: 1 = BNPL (Pay in 4), 0 = delayed lump sum (Pay Later)
      pdate    optional purchase date YYYY-MM-DD (default: purchaseDate in config.js)
@@ -8,7 +9,7 @@
      ret      return URL (redirect mode only)
    Output (all strings, sent to Qualtrics on confirm):
      rd_pid, rd_cond (1 / 0 / none), rd_cond_label (BNPL / LumpSum / none), rd_books, rd_keeps, rd_returns, rd_n_books, rd_n_returned, rd_return_rate,
-     rd_order_p, rd_kept_p, rd_returned_p, rd_plan ("day:pence[:paid]|..." counted from the purchase date),
+     rd_order_p, rd_kept_p, rd_returned_p (cents), rd_plan ("day:cents[:paid]|..." counted from the purchase date),
      rd_paid_p (already paid), rd_refund_p (refund owed), rd_pdate,
      rd_secs ("b03:41.2,b07:12.0"), rd_seq, rd_total, rd_declog ("secs,id,K|R;..."), rd_confirm_secs
 */
@@ -47,10 +48,12 @@ window.startApp = function () {
   $("intro").innerHTML = CFG.readerIntro;
 
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  function gbp(p) { return "£" + (p / 100).toFixed(2); }
+  function usd(c) { return (CFG.currency || "$") + (c / 100).toFixed(2); } // amounts are in cents
 
   /* ---------- state (survives a reload within the session) ---------- */
-  var KEY = "readingroom_p2_" + PID + "_" + IDS.join(".");
+  var RID = (qs.get("rid") || "").slice(0, 64);
+  // One saved state per survey response: a new Qualtrics response (new ResponseID) starts fresh.
+  var KEY = "readingroom_p2_" + PID + "_" + IDS.join(".") + (RID ? "_" + RID : "");
   var state = (function () { try { return JSON.parse(sessionStorage.getItem(KEY)); } catch (e) { return null; } })() ||
     { start: Date.now(), secs: {}, seq: [], dec: {}, declog: [], done: false, payload: null };
   IDS.forEach(function (id) { if (!state.secs[id]) state.secs[id] = 0; });
@@ -76,11 +79,11 @@ window.startApp = function () {
   })(qs.get("pdate") || CFG.purchaseDate);
   function dateOf(day) {
     var d = new Date((PDATE === null ? Date.now() : PDATE) + day * 864e5);
-    return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+    return d.toLocaleDateString(CFG.locale || "en-US", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
   }
   function orderTotal() { return IDS.reduce(function (s, id) { return s + BY_ID[id].price; }, 0); }
   function keptTotal() { return IDS.reduce(function (s, id) { return s + (state.dec[id] === "R" ? 0 : BY_ID[id].price); }, 0); }
-  // Equal split; leftover pennies go on the earliest payments.
+  // Equal split; leftover cents go on the earliest payments.
   function split(total, n) {
     var base = Math.floor(total / n), extra = total - base * n, out = [];
     for (var i = 0; i < n; i++) out.push(base + (i < extra ? 1 : 0));
@@ -91,15 +94,15 @@ window.startApp = function () {
   function plan(kept) {
     if (!PLAN) return { pays: [], paid: 0, refund: 0, future: 0 };
     var n = PLAN.days.length, k = Math.min(PLAN.paid || 0, n);
-    // Lump sum shown on the same timeline: £0 at every step, everything on the last payment.
+    // Lump sum shown on the same timeline: $0 at every step, everything on the last payment.
     if (PLAN.allAtEnd) {
-      var ls = PLAN.days.map(function (d, i) { return { day: d, pence: i === n - 1 ? kept : 0, paid: i < k }; });
+      var ls = PLAN.days.map(function (d, i) { return { day: d, cents: i === n - 1 ? kept : 0, paid: i < k }; });
       return { pays: ls, paid: 0, refund: 0, future: kept, left: n - k };
     }
     var orig = split(orderTotal(), n), paid = 0, pays = [];
-    for (var i = 0; i < k; i++) { paid += orig[i]; pays.push({ day: PLAN.days[i], pence: orig[i], paid: true }); }
+    for (var i = 0; i < k; i++) { paid += orig[i]; pays.push({ day: PLAN.days[i], cents: orig[i], paid: true }); }
     var owed = kept - paid, refund = owed < 0 ? -owed : 0, rest = split(Math.max(owed, 0), n - k || 1);
-    for (var j = k; j < n; j++) pays.push({ day: PLAN.days[j], pence: rest[j - k], paid: false });
+    for (var j = k; j < n; j++) pays.push({ day: PLAN.days[j], cents: rest[j - k], paid: false });
     return { pays: pays, paid: paid, refund: refund, future: Math.max(owed, 0), left: n - k };
   }
 
@@ -114,10 +117,10 @@ window.startApp = function () {
   function timelineSteps(P) {
     var steps = P.pays.map(function (s, i) {
       return '<li class="pay' + (s.paid ? " now" : "") + '"><span class="dot" aria-hidden="true">' + (s.paid ? "✓" : "") + "</span>" +
-        '<span class="amt">' + gbp(s.pence) + '</span><span class="rel">' + esc(label(i, s)) + "</span></li>";
+        '<span class="amt">' + usd(s.cents) + '</span><span class="rel">' + esc(label(i, s)) + "</span></li>";
     }).join("");
     if (PLAN.days[0] !== 0) {
-      steps = '<li class="pay zero"><span class="dot" aria-hidden="true"></span><span class="amt">' + gbp(0) +
+      steps = '<li class="pay zero"><span class="dot" aria-hidden="true"></span><span class="amt">' + usd(0) +
         '</span><span class="rel">Order placed</span></li>' + steps;
     }
     return steps;
@@ -125,7 +128,7 @@ window.startApp = function () {
   function renderPlan() {
     var order = orderTotal();
     var head = '<div class="plan-order"><span>Your order of ' + IDS.length + " book" + (IDS.length === 1 ? "" : "s") +
-      "</span><strong>" + gbp(order) + "</strong></div>";
+      "</span><strong>" + usd(order) + "</strong></div>";
     if (!PLAN) {
       planEl.innerHTML = head + '<p class="note warn">Test mode: no payment condition was supplied (add &amp;cond=1 for Pay in 4 or &amp;cond=0 for Pay Later).</p>';
       return;
@@ -134,10 +137,10 @@ window.startApp = function () {
     var P = plan(order), orig = split(order, PLAN.days.length), headline, detail;
     var steps = timelineSteps(P);
     if (COND === "BNPL") {
-      headline = "You agreed to " + PLAN.name + ": " + PLAN.days.length + " interest-free payments of " + gbp(orig[0]);
-      detail = "You have paid the first payment of " + gbp(P.paid) + ".";
+      headline = "You agreed to " + PLAN.name + ": " + PLAN.days.length + " interest-free payments of " + usd(orig[0]);
+      detail = "You have paid the first payment of " + usd(P.paid) + ".";
     } else {
-      headline = "You agreed to pay " + gbp(order) + " in 4 weeks";
+      headline = "You agreed to pay " + usd(order) + " in 4 weeks";
       detail = "You agreed to pay the full amount in 4 weeks. Nothing has been paid yet.";
     }
     planEl.innerHTML = head +
@@ -150,39 +153,69 @@ window.startApp = function () {
   /* ---------- tabs and keep/return ---------- */
   function badge(id) {
     var d = state.dec[id];
-    return d === "K" ? '<span class="badge keep">Keep</span>' : d === "R" ? '<span class="badge ret">Return</span>' : '<span class="badge todo">Decide</span>';
+    return d === "K" ? '<span class="badge keep">✓ Keep</span>' : d === "R" ? '<span class="badge ret">↩ Return</span>' : '<span class="badge todo">Decide</span>';
+  }
+  function nDecided() { return IDS.filter(function (id) { return state.dec[id]; }).length; }
+  function nextUndecided() {
+    var i = IDS.indexOf(current);
+    for (var k = 1; k <= IDS.length; k++) { var id = IDS[(i + k) % IDS.length]; if (!state.dec[id]) return id; }
+    return null;
+  }
+  // Header button shows progress and only looks active once every book has a decision.
+  function renderProgress() {
+    var n = nDecided(), all = n === IDS.length, btn = $("doneBtn");
+    btn.innerHTML = all ? "Confirm my order →" :
+      'Confirm<span class="long"> my order</span> (' + n + "/" + IDS.length + '<span class="long"> decided</span>)';
+    btn.classList.toggle("ready", all);
   }
   function renderTabs() {
     tabs.innerHTML = IDS.map(function (id) {
       var b = BY_ID[id];
-      return '<button class="tab" role="tab" type="button" data-id="' + id + '" aria-selected="' + (id === current) + '">' +
-        esc(b.title) + "<small>" + esc(b.author) + " · " + gbp(b.price) + "</small>" +
-        (COND === "BNPL" ? '<small class="inst">' + PLAN.days.length + " payments of " + gbp(split(b.price, PLAN.days.length)[0]) + "</small>" : "") +
+      return '<button class="tab' + (state.dec[id] ? "" : " undecided") + '" role="tab" type="button" data-id="' + id + '" aria-selected="' + (id === current) + '">' +
+        esc(b.title) + "<small>" + esc(b.author) + " · " + usd(b.price) + "</small>" +
+        (COND === "BNPL" ? '<small class="inst">' + PLAN.days.length + " payments of " + usd(split(b.price, PLAN.days.length)[0]) + "</small>" : "") +
         badge(id) + "</button>";
     }).join("");
     tabs.querySelectorAll(".tab").forEach(function (el) { el.onclick = function () { show(el.getAttribute("data-id")); }; });
   }
   function renderDecide() {
-    var b = BY_ID[current], d = state.dec[current];
-    decideEl.innerHTML = '<span class="q">Keep or return <strong>' + esc(b.title) + "</strong>?</span>" +
-      '<button type="button" class="choice keep" data-v="K" aria-pressed="' + (d === "K") + '">Keep</button>' +
-      '<button type="button" class="choice ret" data-v="R" aria-pressed="' + (d === "R") + '">Return</button>';
+    var b = BY_ID[current], d = state.dec[current], n = nDecided(), next = nextUndecided();
+    var pos = IDS.indexOf(current) + 1;
+    var status;
+    if (!d) status = '<p class="d-status todo">You have not decided on this book yet. Preview it below, then click <strong>Keep</strong> or <strong>Return</strong>.</p>';
+    else if (next) status = '<p class="d-status ok">You chose to <strong>' + (d === "K" ? "keep" : "return") + "</strong> this book. You can change your mind until you confirm.</p>" +
+      '<button type="button" class="next-btn" id="nextBtn">Next book to decide →</button>';
+    else status = '<p class="d-status ok">You have decided on all ' + IDS.length + " books. Press <strong>Confirm my order</strong> (top right) to finish.</p>" +
+      '<button type="button" class="next-btn" id="finishBtn">Confirm my order →</button>';
+    decideEl.className = "decide" + (d ? " decided" : " pending");
+    decideEl.innerHTML =
+      '<div class="d-head"><span class="d-count">Book ' + pos + " of " + IDS.length + " · " + n + " decided</span>" +
+      '<span class="q">Do you want to keep or return <strong>' + esc(b.title) + "</strong> (" + usd(b.price) + ")?</span></div>" +
+      '<div class="d-btns">' +
+      '<button type="button" class="choice keep" data-v="K" aria-pressed="' + (d === "K") + '"><span class="ic" aria-hidden="true">✓</span><span>Keep<small>I want this book</small></span></button>' +
+      '<button type="button" class="choice ret" data-v="R" aria-pressed="' + (d === "R") + '"><span class="ic" aria-hidden="true">↩</span><span>Return<small>I will not pay for it</small></span></button>' +
+      "</div>" + status;
     decideEl.querySelectorAll(".choice").forEach(function (el) {
       el.onclick = function () {
         var v = el.getAttribute("data-v");
         if (state.dec[current] === v) return;
         state.dec[current] = v; state.declog.push(t() + "," + current + "," + v); save();
         note.textContent = "";
-        renderDecide(); renderTabs(); renderPlan();
+        renderDecide(); renderTabs(); renderPlan(); renderProgress();
       };
     });
+    var nb = $("nextBtn"); if (nb) nb.onclick = function () { show(nextUndecided()); window.scrollTo(0, 0); };
+    var fb = $("finishBtn"); if (fb) fb.onclick = function () { $("doneBtn").click(); };
   }
 
   function show(id) {
     stop(); current = id; state.seq.push(id); save(); start();
-    renderTabs(); renderDecide();
+    renderTabs(); renderDecide(); renderProgress();
     var b = BY_ID[id];
-    if (b.sample === "google") return showGoogle(b);
+    if (b.sample === "google") {
+      if (!b.gbid && !b.isbn) { pane.innerHTML = '<article class="sample"><p>A preview of this book is not available.</p></article>'; return; }
+      return showGoogle(b);
+    }
     pane.innerHTML = '<article class="sample">Loading…</article>';
     fetch("samples/" + id + ".html").then(function (r) { if (!r.ok) throw 0; return r.text(); })
       .then(function (html) { if (current === id) pane.innerHTML = '<article class="sample">' + html + "</article>"; })
@@ -239,7 +272,7 @@ window.startApp = function () {
       rd_n_books: String(IDS.length), rd_n_returned: String(rets.length),
       rd_return_rate: (rets.length / IDS.length).toFixed(4),
       rd_order_p: String(order), rd_kept_p: String(kept), rd_returned_p: String(order - kept),
-      rd_plan: (function (P) { return P.pays.map(function (s) { return s.day + ":" + s.pence + (s.paid ? ":paid" : ""); }).join("|"); })(plan(kept)),
+      rd_plan: (function (P) { return P.pays.map(function (s) { return s.day + ":" + s.cents + (s.paid ? ":paid" : ""); }).join("|"); })(plan(kept)),
       rd_paid_p: String(plan(kept).paid), rd_refund_p: String(plan(kept).refund),
       rd_pdate: PDATE === null ? "" : new Date(PDATE).toISOString().slice(0, 10),
       rd_secs: IDS.map(function (id) { return id + ":" + state.secs[id].toFixed(1); }).join(","),
@@ -264,11 +297,11 @@ window.startApp = function () {
     var keeps = IDS.filter(function (id) { return state.dec[id] === "K"; });
     var rets = IDS.filter(function (id) { return state.dec[id] === "R"; });
     var kept = keptTotal(), P = plan(kept);
-    var list = function (ids) { return ids.length ? "<ul>" + ids.map(function (id) { return "<li>" + esc(BY_ID[id].title) + " (" + gbp(BY_ID[id].price) + ")</li>"; }).join("") + "</ul>" : "<p>None</p>"; };
-    var pay = "";
-    var bg = document.createElement("div"); bg.className = "modal-bg";
+    var list = function (ids) { return ids.length ? "<ul>" + ids.map(function (id) { return "<li>" + esc(BY_ID[id].title) + " (" + usd(BY_ID[id].price) + ")</li>"; }).join("") + "</ul>" : "<p>None</p>"; };
+        var bg = document.createElement("div"); bg.className = "modal-bg";
     bg.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Confirm your order</h2>' +
-      "<p><strong>Keeping</strong></p>" + list(keeps) + "<p><strong>Returning</strong></p>" + list(rets) + pay +
+      "<p><strong>Keeping</strong></p>" + list(keeps) + "<p><strong>Returning</strong></p>" + list(rets) +
+      "<p>Amount returned: <strong>" + usd(orderTotal() - kept) + "</strong>. " + esc(prizeText(keeps.length, orderTotal() - kept)) + "</p>" +
       "<p>Once confirmed, your choices cannot be changed.</p>" +
       '<div class="actions"><button class="secondary" id="cancel" type="button">Go back</button><button class="primary" id="ok" type="button">Confirm</button></div></div>';
     document.body.appendChild(bg); $("ok").focus();
@@ -280,23 +313,29 @@ window.startApp = function () {
     state.payload = buildPayload(); state.done = true; save();
     send();
   }
+  // e.g. "You stand a chance of winning the book you kept ($9.00) and $9.00 as a Prolific bonus."
+  function prizeText(nKept, returned) {
+    var kept = keptTotal(), parts = [];
+    if (nKept) parts.push((nKept === 1 ? "the book" : "the " + nKept + " books") + " you kept (" + usd(kept) + ")");
+    if (returned) parts.push(usd(returned) + " as a Prolific bonus");
+    return "You stand a chance of winning " + parts.join(" and ") + ".";
+  }
   function summaryHtml() {
     var keeps = IDS.filter(function (id) { return state.dec[id] === "K"; });
     var rets = IDS.filter(function (id) { return state.dec[id] === "R"; });
     var kept = keptTotal(), order = orderTotal();
     var list = function (ids) {
       return ids.length ? '<ul class="sum-list">' + ids.map(function (id) {
-        return "<li><span>" + esc(BY_ID[id].title) + '</span><span class="sum-price">' + gbp(BY_ID[id].price) + "</span></li>";
+        return "<li><span>" + esc(BY_ID[id].title) + '</span><span class="sum-price">' + usd(BY_ID[id].price) + "</span></li>";
       }).join("") + "</ul>" : '<p class="sum-none">None</p>';
     };
     var html = '<section class="summary">' +
       '<div class="sum-cols"><div><h2>Keeping (' + keeps.length + ")</h2>" + list(keeps) + "</div>" +
       "<div><h2>Returning (" + rets.length + ")</h2>" + list(rets) + "</div></div>" +
-      '<div class="sum-total"><span>Order total</span><strong>' + gbp(order) + "</strong></div>" +
-      '<div class="sum-total"><span>Returned amount</span><strong>' + gbp(order - kept) + "</strong></div>" +
-      '<p class="sum-prize">You will stand a chance of winning ' +
-        (keeps.length ? "the books you kept" : "") + (keeps.length && order - kept ? " and " : "") +
-        (order - kept ? "the returned amount (" + gbp(order - kept) + ")" : "") + ".</p>";
+      '<div class="sum-total"><span>Order total</span><strong>' + usd(order) + "</strong></div>" +
+      '<div class="sum-total"><span>Books kept</span><strong>' + usd(kept) + "</strong></div>" +
+      '<div class="sum-total"><span>Amount returned</span><strong>' + usd(order - kept) + "</strong></div>" +
+      '<p class="sum-prize">' + prizeText(keeps.length, order - kept) + "</p>";
     return html + "</section>";
   }
 
@@ -308,7 +347,11 @@ window.startApp = function () {
     var summary = summaryHtml();
     window.scrollTo(0, 0);
     if (IN_FRAME) {
-      window.parent.postMessage({ type: "readingroom-reader-complete", payload: p }, CFG.parentOrigin);
+      // Send several times over ~10 s so the survey page receives it even if its script starts late.
+      var msg = { type: "readingroom-reader-complete", payload: p };
+      [0, 300, 1000, 2500, 5000, 10000].forEach(function (ms) {
+        setTimeout(function () { window.parent.postMessage(msg, CFG.parentOrigin); }, ms);
+      });
       pane.innerHTML = '<div class="done"><h1>Order confirmed</h1><p>Here is a summary of your order. Press the arrow button below to continue the survey.</p></div>' + summary;
     } else if (RET) {
       Object.keys(p).forEach(function (k) { RET.searchParams.set(k, p[k]); });

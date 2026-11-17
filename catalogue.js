@@ -4,7 +4,7 @@
    books.csv columns (header row required, order does not matter):
      id       unique code, e.g. b01. NEVER reuse or renumber once data collection starts.
      title, author, genre
-     price    in pounds, e.g. 6.99 (a £ sign is fine)
+     price    in dollars, e.g. 6.99 (a $ sign is fine)
      pages    optional
      format   optional, e.g. Kindle ebook (falls back to config.js)
      colour   optional cover colour, e.g. #23325e (auto-picked if blank)
@@ -60,21 +60,20 @@
     var books = rows.map(function (r, n) {
       var line = n + 2, b = {};
       head.forEach(function (h, j) { b[h] = (r[j] || "").trim(); });
-      var pounds = parseFloat(b.price.replace(/[£,\s]/g, ""));
+      var dollars = parseFloat(b.price.replace(/[$£,\s]/g, ""));
       if (!b.id) errors.push("Row " + line + ": id is empty.");
       else if (!/^\w+$/.test(b.id)) errors.push("Row " + line + ': id "' + b.id + '" may only use letters, numbers and _.');
       else if (seen[b.id]) errors.push("Row " + line + ': id "' + b.id + '" is used twice.');
       seen[b.id] = true;
       if (!b.title) errors.push("Row " + line + ": title is empty.");
-      if (!(pounds >= 0)) errors.push("Row " + line + ': price "' + b.price + '" is not a number.');
-      if (/e\+/i.test(b.isbn)) {
-        if (b.sample === "google" && !b.google_id) errors.push("Row " + line + ": ISBN was turned into a number by Excel (" + b.isbn + "). Format that column as Text and retype it.");
-        else b.isbn = ""; // not needed unless sample = google
-      }
-      if (b.sample === "google" && !b.isbn && !b.google_id) errors.push("Row " + line + ': sample is "google" but isbn and google_id are both empty.');
+      if (!(dollars >= 0)) errors.push("Row " + line + ': price "' + b.price + '" is not a number.');
+      // A missing preview id does not stop the Phase 1 store; the Phase 2 reader shows
+      // "preview not available" for that book and lists it in the browser console.
+      if (/e\+/i.test(b.isbn)) b.isbn = ""; // Excel turned the ISBN into a number; unusable
+      if (b.sample === "google" && !b.isbn && !b.google_id && window.console) console.warn("books.csv row " + line + " (" + b.id + "): no google_id, so Phase 2 has no preview for it.");
       return {
         id: b.id, title: b.title, author: b.author, genre: b.genre || "Other",
-        price: Math.round(pounds * 100),
+        price: Math.round(dollars * 100), // cents
         pages: parseInt(b.pages, 10) || null,
         format: b.format || "",
         colour: /^#[0-9a-f]{3,6}$/i.test(b.colour) ? b.colour : PALETTE[n % PALETTE.length],
@@ -97,7 +96,7 @@
 
   function start(fn) { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn); else fn(); }
 
-  // Excel often saves CSV as Windows-1252 rather than UTF-8; accept either so £ and curly quotes survive.
+  // Excel often saves CSV as Windows-1252 rather than UTF-8; accept either so $, £ and curly quotes survive.
   function decode(buf) {
     try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
     catch (e) { return new TextDecoder("windows-1252").decode(buf); }

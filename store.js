@@ -3,9 +3,9 @@
      pid     participant ID (e.g. Prolific PID)           required in the live study
      rid     Qualtrics ResponseID                          optional, echoed back
      ret     return URL (redirect mode only)               optional
-     budget  endowment in pence                            optional, default from config.js
+     budget  endowment in cents                            optional, default from config.js
    Output (sent to Qualtrics, all strings):
-     bs_pid, bs_rid, bs_items, bs_n, bs_total_p, bs_left_p, bs_budget_p,
+     bs_pid, bs_rid, bs_items, bs_n, bs_total_p, bs_left_p, bs_budget_p (amounts in cents),
      bs_order, bs_views, bs_secs, bs_log
 */
 window.startApp = function () {
@@ -18,9 +18,10 @@ window.startApp = function () {
   var RID = (qs.get("rid") || "").slice(0, 64);
   var RET = safeReturn(qs.get("ret"));
   var BUDGET = parseInt(qs.get("budget"), 10);
-  if (!(BUDGET > 0)) BUDGET = CFG.budgetPence;
+  if (!(BUDGET > 0)) BUDGET = CFG.budgetCents;
   var IN_FRAME = (function () { try { return window.self !== window.top; } catch (e) { return true; } })();
-  var KEY = "readingroom_" + PID;
+  // One saved state per survey response: a new Qualtrics response (new ResponseID) starts a fresh store.
+  var KEY = "readingroom_" + PID + (RID ? "_" + RID : "");
 
   document.title = CFG.storeName;
   document.getElementById("brand").textContent = CFG.storeName;
@@ -38,7 +39,7 @@ window.startApp = function () {
   function log(code, id) { state.events.push(secs() + "," + code + (id ? "," + id : "")); save(); }
 
   /* ---------- helpers ---------- */
-  function gbp(p) { return "£" + (p / 100).toFixed(2); }
+  function usd(c) { return (CFG.currency || "$") + (c / 100).toFixed(2); } // amounts are in cents
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function total() { return state.basket.reduce(function (s, id) { return s + BY_ID[id].price; }, 0); }
   function left() { return BUDGET - total(); }
@@ -102,23 +103,26 @@ window.startApp = function () {
   var app = document.getElementById("app");
 
   function header() {
-    document.getElementById("left").textContent = gbp(left());
+    document.getElementById("left").textContent = usd(left());
     document.getElementById("count").textContent = state.basket.length;
   }
 
   function viewGrid() {
     var genres = ["All"].concat(BOOKS.map(function (b) { return b.genre; }).filter(function (g, i, a) { return a.indexOf(g) === i; }));
-    var html = '<div class="intro">' + CFG.instructions.replace("£10.00", gbp(BUDGET)) + "</div>";
+    var html = '<div class="intro">' + CFG.instructions + "</div>";
     if (genres.length > 2) html += '<div class="filters" role="group" aria-label="Filter by genre">' + genres.map(function (g) {
       return '<button class="chip" type="button" data-genre="' + esc(g) + '" aria-pressed="' + (g === genre) + '">' + esc(g) + "</button>";
     }).join("") + "</div>";
     html += '<div class="grid">' + ORDER.map(function (id) { return BY_ID[id]; })
       .filter(function (b) { return genre === "All" || b.genre === genre; })
       .map(function (b) {
-        return '<button class="card" type="button" data-book="' + b.id + '">' + cover(b) +
+        var has = inBasket(b.id), ok = b.price <= left() && state.basket.length < CFG.maxItems;
+        return '<div class="card"><button class="card-open" type="button" data-book="' + b.id + '" aria-label="' + esc(b.title) + ', details">' + cover(b) +
           '<span class="title">' + esc(b.title) + '</span><span class="author">' + esc(b.author) + "</span>" +
-          '<span class="price">' + gbp(b.price) + "</span>" +
-          (inBasket(b.id) ? '<span class="in-basket">✓ In basket</span>' : "") + "</button>";
+          '<span class="price">' + usd(b.price) + "</span></button>" +
+          (has ? '<button class="card-add in" type="button" data-grid-remove="' + b.id + '">✓ In cart · Remove</button>'
+               : '<button class="card-add" type="button" data-grid-add="' + b.id + '"' + (ok ? "" : ' disabled title="Costs more than you have left"') + ">Add to cart</button>") +
+          "</div>";
       }).join("") + "</div>";
     app.innerHTML = html;
     app.querySelectorAll("[data-genre]").forEach(function (el) {
@@ -126,6 +130,14 @@ window.startApp = function () {
     });
     app.querySelectorAll("[data-book]").forEach(function (el) {
       el.onclick = function () { location.hash = "#/book/" + el.getAttribute("data-book"); };
+    });
+    // Add / remove straight from the grid (logged as GA / GR; the product page logs A / R).
+    function regrid() { var y = window.scrollY; viewGrid(); header(); window.scrollTo(0, y); }
+    app.querySelectorAll("[data-grid-add]").forEach(function (el) {
+      el.onclick = function () { add(el.getAttribute("data-grid-add"), "GA"); regrid(); };
+    });
+    app.querySelectorAll("[data-grid-remove]").forEach(function (el) {
+      el.onclick = function () { remove(el.getAttribute("data-grid-remove"), "GR"); regrid(); };
     });
   }
 
@@ -138,19 +150,19 @@ window.startApp = function () {
 
     var has = inBasket(id), canAfford = b.price <= left(), full = state.basket.length >= CFG.maxItems;
     var btn, note = "";
-    if (has) btn = '<button class="secondary" id="toggle" type="button">Remove from basket</button>';
+    if (has) btn = '<button class="secondary" id="toggle" type="button">Remove from cart</button>';
     else {
-      btn = '<button class="primary" id="toggle" type="button"' + (canAfford && !full ? "" : " disabled") + ">Add to basket</button>";
-      if (!canAfford) note = "This book costs more than you have left (" + gbp(left()) + ").";
-      else if (full) note = "Your basket is full.";
+      btn = '<button class="primary" id="toggle" type="button"' + (canAfford && !full ? "" : " disabled") + ">Add to cart</button>";
+      if (!canAfford) note = "This book costs more than you have left (" + usd(left()) + ").";
+      else if (full) note = "Your cart is full.";
     }
     app.innerHTML = '<button class="back" id="back" type="button">← All books</button>' +
       '<div class="product">' + cover(b, true) + "<div>" +
       "<h1>" + esc(b.title) + '</h1><p class="by">by ' + esc(b.author) + "</p>" +
       '<ul class="meta"><li>' + esc(b.genre) + "</li>" + (b.pages ? "<li>" + b.pages + " pages</li>" : "") + "<li>" + esc(b.format || CFG.format || "Paperback") + "</li></ul>" +
       b.blurb.split(/\n\s*\n/).map(function (para) { return "<p>" + esc(para.trim()).replace(/\n/g, "<br>") + "</p>"; }).join("") +
-      '<p class="p-price">' + gbp(b.price) + "</p>" + btn +
-      ' <button class="secondary" id="toBasket" type="button">View basket</button>' +
+      '<p class="p-price">' + usd(b.price) + "</p>" + btn +
+      ' <button class="secondary" id="toBasket" type="button">View cart</button>' +
       '<p class="note' + (note ? " warn" : "") + '" id="note">' + note + "</p></div></div>";
 
     document.getElementById("back").onclick = function () { location.hash = "#/"; };
@@ -159,7 +171,7 @@ window.startApp = function () {
       if (inBasket(id)) { remove(id); }
       else { add(id); }
       viewBook(id, true); // re-render without counting a new view
-      document.getElementById("note").textContent = inBasket(id) ? "Added to your basket." : "Removed from your basket.";
+      document.getElementById("note").textContent = inBasket(id) ? "Added to your cart." : "Removed from your cart.";
       document.getElementById("note").className = "note";
     };
     header();
@@ -170,13 +182,13 @@ window.startApp = function () {
     var lines = state.basket.map(function (id) {
       var b = BY_ID[id];
       return '<div class="line">' + cover(b) + '<div><div class="lt">' + esc(b.title) + '</div><div class="la">' + esc(b.author) + "</div></div>" +
-        '<div class="lp">' + gbp(b.price) + '</div><button class="remove" type="button" data-remove="' + id + '">Remove</button></div>';
+        '<div class="lp">' + usd(b.price) + '</div><button class="remove" type="button" data-remove="' + id + '">Remove</button></div>';
     }).join("");
-    app.innerHTML = '<div class="basket"><button class="back" id="back" type="button">← Keep browsing</button><h1>Your basket</h1>' +
-      (lines || '<p class="empty">Your basket is empty.</p>') +
-      '<div class="totals"><div><span>Endowment</span><span>' + gbp(BUDGET) + "</span></div>" +
-      "<div><span>Books (" + state.basket.length + ")</span><span>−" + gbp(total()) + "</span></div>" +
-      '<div class="grand"><span>' + (CFG.requireFullSpend ? "Left to spend" : "You keep") + '</span><span>' + gbp(left()) + "</span></div></div>" +
+    app.innerHTML = '<div class="basket"><button class="back" id="back" type="button">← Keep browsing</button><h1>Your cart</h1>' +
+      (lines || '<p class="empty">Your cart is empty.</p>') +
+      '<div class="totals"><div><span>Budget</span><span>' + usd(BUDGET) + "</span></div>" +
+      "<div><span>Books (" + state.basket.length + ")</span><span>−" + usd(total()) + "</span></div>" +
+      '<div class="grand"><span>' + (CFG.requireFullSpend ? "Left to spend" : "You keep") + '</span><span>' + usd(left()) + "</span></div></div>" +
       '<div class="actions"><button class="secondary" id="more" type="button">Keep browsing</button>' +
       '<button class="primary" id="checkout" type="button">Checkout</button></div>' +
       '<p class="note warn" id="note" style="text-align:right"></p></div>';
@@ -191,7 +203,7 @@ window.startApp = function () {
         return;
       }
       if (CFG.requireFullSpend && left() > 0) {
-        document.getElementById("note").textContent = "Please spend the full " + gbp(BUDGET).replace(".00", "") + " before checking out. You have " + gbp(left()) + " left to spend.";
+        document.getElementById("note").textContent = "Please spend the full " + usd(BUDGET).replace(".00", "") + " before checking out. You have " + usd(left()) + " left to spend.";
         return;
       }
       confirmModal();
@@ -202,9 +214,9 @@ window.startApp = function () {
   function confirmModal() {
     var bg = document.createElement("div"); bg.className = "modal-bg";
     bg.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Confirm your order</h2>' +
-      "<p>You are choosing " + state.basket.length + " book" + (state.basket.length === 1 ? "" : "s") + " for " + gbp(total()) + ":</p><ul>" +
+      "<p>You are choosing " + state.basket.length + " book" + (state.basket.length === 1 ? "" : "s") + " for " + usd(total()) + ":</p><ul>" +
       state.basket.map(function (id) { return "<li>" + esc(BY_ID[id].title) + "</li>"; }).join("") + "</ul>" +
-      "<p>" + (CFG.requireFullSpend ? "" : "You will keep <strong>" + gbp(left()) + "</strong>. ") + "Once confirmed, your order cannot be changed.</p>" +
+      "<p>" + (CFG.requireFullSpend ? "" : "You will keep <strong>" + usd(left()) + "</strong>. ") + "Once confirmed, your order cannot be changed.</p>" +
       '<div class="actions"><button class="secondary" id="cancel" type="button">Go back</button><button class="primary" id="ok" type="button">Confirm order</button></div></div>';
     document.body.appendChild(bg);
     document.getElementById("ok").focus();
@@ -212,12 +224,12 @@ window.startApp = function () {
     document.getElementById("ok").onclick = function () { bg.remove(); finish(); };
   }
 
-  function add(id) {
+  function add(id, code) {
     if (inBasket(id) || BY_ID[id].price > left() || state.basket.length >= CFG.maxItems) return;
-    state.basket.push(id); log("A", id); header();
+    state.basket.push(id); log(code || "A", id); header();
   }
-  function remove(id) {
-    state.basket = state.basket.filter(function (x) { return x !== id; }); log("R", id); header();
+  function remove(id, code) {
+    state.basket = state.basket.filter(function (x) { return x !== id; }); log(code || "R", id); header();
   }
 
   /* ---------- hand-off to Qualtrics ---------- */
@@ -249,7 +261,11 @@ window.startApp = function () {
     var p = state.payload;
     viewDone();
     if (IN_FRAME) {
-      window.parent.postMessage({ type: "readingroom-complete", payload: p }, CFG.parentOrigin);
+      // Send several times over ~10 s so the survey page receives it even if its script starts late.
+      var msg = { type: "readingroom-complete", payload: p };
+      [0, 300, 1000, 2500, 5000, 10000].forEach(function (ms) {
+        setTimeout(function () { window.parent.postMessage(msg, CFG.parentOrigin); }, ms);
+      });
     } else if (RET) {
       Object.keys(p).forEach(function (k) { RET.searchParams.set(k, p[k]); });
       setTimeout(function () { location.replace(RET.toString()); }, 800);
